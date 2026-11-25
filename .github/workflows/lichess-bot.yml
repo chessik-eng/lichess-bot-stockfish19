@@ -40,8 +40,9 @@ jobs:
           curl -fL --retry 3 \
             https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-x86-64-universal.tar.gz \
             -o /tmp/stockfish19.tar.gz
-          tar -xzf /tmp/stockfish19.tar.gz -C lichess-bot/engines
-          ENGINE_BIN="$(find lichess-bot/engines -type f -name 'stockfish*' -perm /111 | head -n 1)"
+          mkdir -p /tmp/stockfish19-extract
+          tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19-extract
+          ENGINE_BIN="$(find /tmp/stockfish19-extract -type f -name 'stockfish*' -perm /111 | head -n 1)"
           if [ -z "$ENGINE_BIN" ]; then
             echo "Could not find the Stockfish executable in the official archive."
             find lichess-bot/engines -maxdepth 3 -type f
