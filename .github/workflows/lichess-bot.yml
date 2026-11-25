@@ -52,7 +52,7 @@ jobs:
           mv "$ENGINE_BIN" lichess-bot/engines/stockfish
           lichess-bot/engines/stockfish --version
 
-      - name: Configure bot for fast replies without weakening Stockfish
+      - name: Configure bot for fast replies and a quick first move
         working-directory: lichess-bot
         env:
           LICHESS_BOT_TOKEN: ${{ secrets.LICHESS_BOT_TOKEN }}
@@ -86,8 +86,25 @@ jobs:
           if (ponder_count, fake_count, delay_count) != (1, 1, 1):
               raise SystemExit("Could not apply all fast-response settings")
 
+          # Use Lichess Masters opening explorer to choose a strong first move
+          # immediately from established master practice, when available.
+          config, opening_count = re.subn(
+              r"(?ms)(^    lichess_opening_explorer:\n)(.*?)(?=^    online_egtb:)",
+              lambda m: m.group(1) + re.sub(
+                  r"(?m)^      enabled:.*$", "      enabled: true",
+                  re.sub(r"(?m)^      min_time:.*$", "      min_time: 0",
+                         re.sub(r'(?m)^      source:.*$', '      source: "masters"',
+                                re.sub(r'(?m)^      sort:.*$', '      sort: "winrate"',
+                                       re.sub(r"(?m)^      min_games:.*$", "      min_games: 10", m.group(2)))))),
+              config,
+              count=1
+          )
+          if opening_count != 1:
+              raise SystemExit("Could not enable the Lichess Masters opening explorer")
+
           path.write_text(config)
-          print("Fast-response settings applied: ponder=true, fake_think_time=false, rate_limiting_delay=0.")
+          print("Fast settings applied: ponder=true, fake_think_time=false, rate_limiting_delay=0.")
+          print("Opening explorer enabled: Masters database, minimum clock threshold 0 seconds.")
           print("Stockfish settings: Threads=2, Hash=2048 MB.")
           PY
 
