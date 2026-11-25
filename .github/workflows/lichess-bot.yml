@@ -83,7 +83,8 @@ jobs:
           config, ponder_count = re.subn(r"(?m)^  ponder:.*$", "  ponder: true", config, count=1)
           config, fake_count = re.subn(r"(?m)^fake_think_time:.*$", "fake_think_time: false", config, count=1)
           config, delay_count = re.subn(r"(?m)^rate_limiting_delay:.*$", "rate_limiting_delay: 0", config, count=1)
-          if (ponder_count, fake_count, delay_count) != (1, 1, 1):
+          config, overhead_count = re.subn(r"(?m)^move_overhead:.*$", "move_overhead: 100", config, count=1)
+          if (ponder_count, fake_count, delay_count, overhead_count) != (1, 1, 1, 1):
               raise SystemExit("Could not apply all fast-response settings")
 
           # Use Lichess Masters opening explorer to choose a strong first move
@@ -103,7 +104,7 @@ jobs:
               raise SystemExit("Could not enable the Lichess Masters opening explorer")
 
           path.write_text(config)
-          print("Fast settings applied: ponder=true, fake_think_time=false, rate_limiting_delay=0.")
+          print("Fast settings applied: ponder=true, fake_think_time=false, rate_limiting_delay=0, move_overhead=100 ms.")
           print("Opening explorer enabled: Masters database, minimum clock threshold 0 seconds.")
           print("Stockfish settings: Threads=2, Hash=2048 MB.")
           PY
