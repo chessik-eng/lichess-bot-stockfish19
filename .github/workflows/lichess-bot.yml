@@ -42,28 +42,54 @@ jobs:
           import chess
           import chess.pgn
           import chess.polyglot
+          import struct
           from pathlib import Path
 
           source = Path("../openings/repertoire.pgn")
           target = Path("engines/repertoire.bin")
+          records = []
           games = 0
-          entries = 0
 
-          with source.open(encoding="utf-8") as pgn, chess.polyglot.open_writer(target) as writer:
+          def encode_polyglot_move(move):
+              promotion = {None: 0, chess.KNIGHT: 1, chess.BISHOP: 2,
+                           chess.ROOK: 3, chess.QUEEN: 4}[move.promotion]
+              return (
+                  chess.square_file(move.to_square)
+                  | (chess.square_rank(move.to_square) << 3)
+                  | (chess.square_file(move.from_square) << 6)
+                  | (chess.square_rank(move.from_square) << 9)
+                  | (promotion << 12)
+              )
+
+          with source.open(encoding="utf-8") as pgn:
               while game := chess.pgn.read_game(pgn):
+                  if game.errors:
+                      raise SystemExit(f"Invalid PGN: {game.errors}")
                   games += 1
                   is_french = game.headers.get("Event") == "French Defense"
                   board = game.board()
                   for ply, move in enumerate(game.mainline_moves()):
-                      # The French line starts with White's 1.e4. Do not put
-                      # that move in the book: Aloktrix must choose 1.d4 as White.
+                      if move not in board.legal_moves:
+                          raise SystemExit(f"Illegal move in repertoire: {move} at {board.fen()}")
+                      # Skip White's 1.e4 in the French line: the book must
+                      # answer that move with Black's 1...e6, not prescribe 1.e4.
                       if not (is_french and ply == 0):
-                          writer.append(board, move, weight=100, learn=0)
-                          entries += 1
+                          key = chess.polyglot.zobrist_hash(board)
+                          records.append((key, encode_polyglot_move(move), 100, 0))
                       board.push(move)
 
-          if games != 2 or entries < 20 or not target.exists() or target.stat().st_size == 0:
-              raise SystemExit(f"Opening book build failed: games={games}, entries={entries}")
+          if games != 2 or len(records) < 20:
+              raise SystemExit(f"Opening book build failed: games={games}, entries={len(records)}")
+
+          # Polyglot books are sorted by their 64-bit Zobrist key and consist
+          # of fixed 16-byte big-endian records: key, move, weight, learn.
+          records.sort(key=lambda item: (item[0], item[1]))
+          with target.open("wb") as book:
+              for record in records:
+                  book.write(struct.pack(">QHHI", *record))
+
+          if not target.exists() or target.stat().st_size != 16 * len(records):
+              raise SystemExit("Polyglot book file has an unexpected size")
 
           start = chess.Board()
           after_e4 = chess.Board()
@@ -74,7 +100,7 @@ jobs:
           if start_moves != {"d4"} or french_moves != {"e6"}:
               raise SystemExit(f"Unexpected repertoire: first_moves={start_moves}, replies_to_e4={french_moves}")
 
-          print(f"Built {target}: {entries} book positions.")
+          print(f"Built {target}: {len(records)} valid Polyglot entries ({target.stat().st_size} bytes).")
           print("Verified: White starts 1.d4 (London System); against 1.e4 Black replies 1...e6 (French Defense).")
           PY
 
