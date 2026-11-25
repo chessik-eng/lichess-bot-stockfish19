@@ -45,7 +45,7 @@ jobs:
           ENGINE_BIN="$(find /tmp/stockfish19-extract -type f -name 'stockfish*' -perm /111 | head -n 1)"
           if [ -z "$ENGINE_BIN" ]; then
             echo "Could not find the Stockfish executable in the official archive."
-            find lichess-bot/engines -maxdepth 3 -type f
+            find /tmp/stockfish19-extract -maxdepth 4 -type f
             exit 1
           fi
           chmod +x "$ENGINE_BIN"
@@ -83,7 +83,7 @@ jobs:
         working-directory: lichess-bot
         run: |
           echo "Starting lichess-bot with official Stockfish 19."
-          timeout --signal=INT --kill-after=30s 5h45m python lichess-bot.py --config config.yml || status=$?
+          timeout --signal=INT --kill-after=30s 20700s python lichess-bot.py --config config.yml || status=$?
           status=${status:-0}
           if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
             exit "$status"
