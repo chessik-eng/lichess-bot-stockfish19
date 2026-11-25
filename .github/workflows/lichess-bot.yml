@@ -1,0 +1,85 @@
+name: Lichess bot — Stockfish 19
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lichess-bot-stockfish19
+  cancel-in-progress: false
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Check out this bot configuration
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download lichess-bot
+        run: |
+          git clone --depth 1 https://github.com/lichess-bot-devs/lichess-bot.git lichess-bot
+          cp lichess-bot/config.yml.default lichess-bot/config.yml
+
+      - name: Install lichess-bot dependencies
+        working-directory: lichess-bot
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Download Stockfish 19
+        run: |
+          mkdir -p lichess-bot/engines
+          curl -fL --retry 3 \
+            https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-x86-64-universal.tar.gz \
+            -o /tmp/stockfish19.tar.gz
+          tar -xzf /tmp/stockfish19.tar.gz -C lichess-bot/engines
+          ENGINE_BIN="$(find lichess-bot/engines -type f -name 'stockfish*' -perm /111 | head -n 1)"
+          if [ -z "$ENGINE_BIN" ]; then
+            echo "Could not find the Stockfish executable in the official archive."
+            find lichess-bot/engines -maxdepth 3 -type f
+            exit 1
+          fi
+          chmod +x "$ENGINE_BIN"
+          mv "$ENGINE_BIN" lichess-bot/engines/stockfish
+          lichess-bot/engines/stockfish --version
+
+      - name: Configure bot
+        working-directory: lichess-bot
+        env:
+          LICHESS_BOT_TOKEN: ${{ secrets.LICHESS_BOT_TOKEN }}
+        run: |
+          if [ -z "$LICHESS_BOT_TOKEN" ]; then
+            echo "Missing repository secret: LICHESS_BOT_TOKEN"
+            exit 1
+          fi
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path("config.yml")
+          config = path.read_text()
+          token = json.dumps(os.environ["LICHESS_BOT_TOKEN"])
+          config, count = re.subn(r"(?m)^token:.*$", f"token: {token}", config, count=1)
+          if count != 1:
+              raise SystemExit("Could not set the Lichess token in config.yml")
+          config = config.replace('name: "engine_name"', 'name: "stockfish"', 1)
+          config = config.replace("Threads: 4", "Threads: 2", 1)
+          config = config.replace("Hash: 512", "Hash: 2048", 1)
+          path.write_text(config)
+          PY
+
+      - name: Run bot for this six-hour cycle
+        working-directory: lichess-bot
+        run: |
+          echo "Starting lichess-bot with official Stockfish 19."
+          timeout --signal=INT --kill-after=30s 5h45m python lichess-bot.py --config config.yml
