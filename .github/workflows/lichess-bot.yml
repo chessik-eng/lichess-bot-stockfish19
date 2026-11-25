@@ -52,7 +52,7 @@ jobs:
           mv "$ENGINE_BIN" lichess-bot/engines/stockfish
           lichess-bot/engines/stockfish --version
 
-      - name: Configure bot
+      - name: Configure bot for fast replies without weakening Stockfish
         working-directory: lichess-bot
         env:
           LICHESS_BOT_TOKEN: ${{ secrets.LICHESS_BOT_TOKEN }}
@@ -73,10 +73,22 @@ jobs:
           config, count = re.subn(r"(?m)^token:.*$", f"token: {token}", config, count=1)
           if count != 1:
               raise SystemExit("Could not set the Lichess token in config.yml")
+
+          # Use Stockfish 19 and the available runner resources.
           config = config.replace('name: "engine_name"', 'name: "stockfish"', 1)
           config = config.replace("Threads: 4", "Threads: 2", 1)
           config = config.replace("Hash: 512", "Hash: 2048", 1)
+
+          # Ponder lets Stockfish calculate during the opponent's turn.
+          config, ponder_count = re.subn(r"(?m)^  ponder:.*$", "  ponder: true", config, count=1)
+          config, fake_count = re.subn(r"(?m)^fake_think_time:.*$", "fake_think_time: false", config, count=1)
+          config, delay_count = re.subn(r"(?m)^rate_limiting_delay:.*$", "rate_limiting_delay: 0", config, count=1)
+          if (ponder_count, fake_count, delay_count) != (1, 1, 1):
+              raise SystemExit("Could not apply all fast-response settings")
+
           path.write_text(config)
+          print("Fast-response settings applied: ponder=true, fake_think_time=false, rate_limiting_delay=0.")
+          print("Stockfish settings: Threads=2, Hash=2048 MB.")
           PY
 
       - name: Run bot for this six-hour cycle
