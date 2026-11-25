@@ -34,6 +34,50 @@ jobs:
         working-directory: lichess-bot
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
 
+      - name: Build custom London and French opening book
+        working-directory: lichess-bot
+        run: |
+          mkdir -p engines
+          python - <<'PY'
+          import chess
+          import chess.pgn
+          import chess.polyglot
+          from pathlib import Path
+
+          source = Path("../openings/repertoire.pgn")
+          target = Path("engines/repertoire.bin")
+          games = 0
+          entries = 0
+
+          with source.open(encoding="utf-8") as pgn, chess.polyglot.open_writer(target) as writer:
+              while game := chess.pgn.read_game(pgn):
+                  games += 1
+                  is_french = game.headers.get("Event") == "French Defense"
+                  board = game.board()
+                  for ply, move in enumerate(game.mainline_moves()):
+                      # The French line starts with White's 1.e4. Do not put
+                      # that move in the book: Aloktrix must choose 1.d4 as White.
+                      if not (is_french and ply == 0):
+                          writer.append(board, move, weight=100, learn=0)
+                          entries += 1
+                      board.push(move)
+
+          if games != 2 or entries < 20 or not target.exists() or target.stat().st_size == 0:
+              raise SystemExit(f"Opening book build failed: games={games}, entries={entries}")
+
+          start = chess.Board()
+          after_e4 = chess.Board()
+          after_e4.push_san("e4")
+          with chess.polyglot.open_reader(target) as reader:
+              start_moves = {start.san(entry.move) for entry in reader.find_all(start)}
+              french_moves = {after_e4.san(entry.move) for entry in reader.find_all(after_e4)}
+          if start_moves != {"d4"} or french_moves != {"e6"}:
+              raise SystemExit(f"Unexpected repertoire: first_moves={start_moves}, replies_to_e4={french_moves}")
+
+          print(f"Built {target}: {entries} book positions.")
+          print("Verified: White starts 1.d4 (London System); against 1.e4 Black replies 1...e6 (French Defense).")
+          PY
+
       - name: Download Stockfish 19
         run: |
           mkdir -p lichess-bot/engines
@@ -52,7 +96,7 @@ jobs:
           mv "$ENGINE_BIN" lichess-bot/engines/stockfish
           lichess-bot/engines/stockfish --version
 
-      - name: Configure bot for fast replies and a quick first move
+      - name: Configure bot for fast replies and the chosen openings
         working-directory: lichess-bot
         env:
           LICHESS_BOT_TOKEN: ${{ secrets.LICHESS_BOT_TOKEN }}
@@ -79,6 +123,28 @@ jobs:
           config = config.replace("Threads: 4", "Threads: 2", 1)
           config = config.replace("Hash: 512", "Hash: 2048", 1)
 
+          # Enable the locally built repertoire book. Polyglot book moves are
+          # checked before online sources and Stockfish, so these lines are fixed.
+          polyglot_block = """  polyglot:
+            enabled: true
+            book:
+              standard:
+                - engines/repertoire.bin
+            min_weight: 1
+            selection: "best_move"
+            max_depth: 12
+            normalization: "none"
+
+          """
+          config, polyglot_count = re.subn(
+              r"(?ms)^  polyglot:\n.*?(?=^  draw_or_resign:)",
+              polyglot_block,
+              config,
+              count=1
+          )
+          if polyglot_count != 1:
+              raise SystemExit("Could not enable the custom Polyglot opening book")
+
           # Ponder lets Stockfish calculate during the opponent's turn.
           config, ponder_count = re.subn(r"(?m)^  ponder:.*$", "  ponder: true", config, count=1)
           config, fake_count = re.subn(r"(?m)^fake_think_time:.*$", "fake_think_time: false", config, count=1)
@@ -87,25 +153,22 @@ jobs:
           if (ponder_count, fake_count, delay_count, overhead_count) != (1, 1, 1, 1):
               raise SystemExit("Could not apply all fast-response settings")
 
-          # Use Lichess Masters opening explorer to choose a strong first move
-          # immediately from established master practice, when available.
+          # Disable the general Masters explorer so it cannot steer the bot
+          # away from the requested London/French repertoire when the book ends.
           config, opening_count = re.subn(
               r"(?ms)(^    lichess_opening_explorer:\n)(.*?)(?=^    online_egtb:)",
               lambda m: m.group(1) + re.sub(
-                  r"(?m)^      enabled:.*$", "      enabled: true",
-                  re.sub(r"(?m)^      min_time:.*$", "      min_time: 0",
-                         re.sub(r'(?m)^      source:.*$', '      source: "masters"',
-                                re.sub(r'(?m)^      sort:.*$', '      sort: "winrate"',
-                                       re.sub(r"(?m)^      min_games:.*$", "      min_games: 10", m.group(2)))))),
+                  r"(?m)^      enabled:.*$", "      enabled: false", m.group(2), count=1
+              ),
               config,
               count=1
           )
           if opening_count != 1:
-              raise SystemExit("Could not enable the Lichess Masters opening explorer")
+              raise SystemExit("Could not disable the general Lichess opening explorer")
 
           path.write_text(config)
           print("Fast settings applied: ponder=true, fake_think_time=false, rate_limiting_delay=0, move_overhead=100 ms.")
-          print("Opening explorer enabled: Masters database, minimum clock threshold 0 seconds.")
+          print("Opening repertoire active: London System as White; French Defense against 1.e4 as Black.")
           print("Stockfish settings: Threads=2, Hash=2048 MB.")
           PY
 
