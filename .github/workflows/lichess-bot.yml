@@ -178,6 +178,23 @@ jobs:
           config["rate_limiting_delay"] = 0
           config["move_overhead"] = 100
 
+          # Automatically challenge random Lichess bots while idle.
+          matchmaking = config.setdefault("matchmaking", {})
+          if not isinstance(matchmaking, dict):
+              raise SystemExit("Invalid config.yml: matchmaking must be a mapping")
+          matchmaking["allow_matchmaking"] = True
+          matchmaking["allow_during_games"] = False
+          matchmaking["challenge_variant"] = "standard"
+          matchmaking["challenge_timeout"] = 30
+          matchmaking["challenge_initial_time"] = [180]
+          matchmaking["challenge_increment"] = [1]
+          matchmaking["opponent_min_rating"] = 600
+          matchmaking["opponent_max_rating"] = 4000
+          matchmaking.pop("opponent_rating_difference", None)
+          matchmaking["rating_preference"] = "none"
+          matchmaking["challenge_mode"] = "casual"
+          matchmaking["challenge_filter"] = "fine"
+
           # Validate the exact structure that lichess-bot expects before launch.
           if not isinstance(engine["polyglot"], dict) or not engine["polyglot"]["enabled"]:
               raise SystemExit("Polyglot book configuration is invalid")
@@ -188,7 +205,14 @@ jobs:
               yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
               encoding="utf-8",
           )
-          print("Configuration validated: Stockfish 19, London/French Polyglot book, fast Bullet settings.")
+          if matchmaking["allow_matchmaking"] is not True or matchmaking["challenge_variant"] != "standard":
+              raise SystemExit("Automatic standard-chess bot matchmaking is not enabled")
+          if matchmaking["opponent_min_rating"] != 600 or matchmaking["opponent_max_rating"] != 4000:
+              raise SystemExit("Matchmaking must allow the full Lichess bot rating range")
+          if "opponent_rating_difference" in matchmaking:
+              raise SystemExit("Matchmaking must not restrict opponents by rating difference")
+          print("Configuration validated: Stockfish 19, London/French book, and automatic casual 3+1 matchmaking against bots from 600 to 4000.")
+
           PY
 
       - name: Run bot for this six-hour cycle
