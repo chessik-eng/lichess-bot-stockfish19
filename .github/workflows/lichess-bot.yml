@@ -132,79 +132,68 @@ jobs:
             exit 1
           fi
           python - <<'PY'
-          import json
           import os
-          import re
           from pathlib import Path
+          import yaml
 
           path = Path("config.yml")
-          config = path.read_text()
-          token = json.dumps(os.environ["LICHESS_BOT_TOKEN"])
-          config, count = re.subn(r"(?m)^token:.*$", f"token: {token}", config, count=1)
-          if count != 1:
-              raise SystemExit("Could not set the Lichess token in config.yml")
+          config = yaml.safe_load(path.read_text(encoding="utf-8"))
+          if not isinstance(config, dict):
+              raise SystemExit("Invalid config.yml: expected a YAML mapping")
 
-          # Use Stockfish 19 and the available runner resources.
-          config = config.replace('name: "engine_name"', 'name: "stockfish"', 1)
-          config = config.replace("Threads: 4", "Threads: 2", 1)
-          config = config.replace("Hash: 512", "Hash: 2048", 1)
+          config["token"] = os.environ["LICHESS_BOT_TOKEN"]
 
-          # Enable the locally built repertoire book. Polyglot book moves are
-          # checked before online sources and Stockfish, so these lines are fixed.
-          polyglot_block = """  polyglot:
-            enabled: true
-            book:
-              standard:
-                - engines/repertoire.bin
-            min_weight: 1
-            selection: "best_move"
-            max_depth: 12
-            normalization: "none"
+          engine = config.setdefault("engine", {})
+          if not isinstance(engine, dict):
+              raise SystemExit("Invalid config.yml: engine must be a mapping")
+          engine["name"] = "stockfish"
+          engine["ponder"] = True
+          engine["uci_options"]["Threads"] = 2
+          engine["uci_options"]["Hash"] = 2048
+          engine["uci_options"]["Move Overhead"] = 100
+          engine["polyglot"] = {
+              "enabled": True,
+              "book": {"standard": ["engines/repertoire.bin"]},
+              "min_weight": 1,
+              "selection": "best_move",
+              "max_depth": 12,
+              "normalization": "none",
+          }
+          engine["online_moves"]["lichess_opening_explorer"]["enabled"] = False
 
-          """
-          config, polyglot_count = re.subn(
-              r"(?ms)^  polyglot:\n.*?(?=^  draw_or_resign:)",
-              polyglot_block,
-              config,
-              count=1
+          config["fake_think_time"] = False
+          config["rate_limiting_delay"] = 0
+          config["move_overhead"] = 100
+
+          # Validate the exact structure that lichess-bot expects before launch.
+          if not isinstance(engine["polyglot"], dict) or not engine["polyglot"]["enabled"]:
+              raise SystemExit("Polyglot book configuration is invalid")
+          if engine["polyglot"]["book"]["standard"] != ["engines/repertoire.bin"]:
+              raise SystemExit("The custom opening book path is not configured")
+
+          path.write_text(
+              yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
+              encoding="utf-8",
           )
-          if polyglot_count != 1:
-              raise SystemExit("Could not enable the custom Polyglot opening book")
-
-          # Ponder lets Stockfish calculate during the opponent's turn.
-          config, ponder_count = re.subn(r"(?m)^  ponder:.*$", "  ponder: true", config, count=1)
-          config, fake_count = re.subn(r"(?m)^fake_think_time:.*$", "fake_think_time: false", config, count=1)
-          config, delay_count = re.subn(r"(?m)^rate_limiting_delay:.*$", "rate_limiting_delay: 0", config, count=1)
-          config, overhead_count = re.subn(r"(?m)^move_overhead:.*$", "move_overhead: 100", config, count=1)
-          if (ponder_count, fake_count, delay_count, overhead_count) != (1, 1, 1, 1):
-              raise SystemExit("Could not apply all fast-response settings")
-
-          # Disable the general Masters explorer so it cannot steer the bot
-          # away from the requested London/French repertoire when the book ends.
-          config, opening_count = re.subn(
-              r"(?ms)(^    lichess_opening_explorer:\n)(.*?)(?=^    online_egtb:)",
-              lambda m: m.group(1) + re.sub(
-                  r"(?m)^      enabled:.*$", "      enabled: false", m.group(2), count=1
-              ),
-              config,
-              count=1
-          )
-          if opening_count != 1:
-              raise SystemExit("Could not disable the general Lichess opening explorer")
-
-          path.write_text(config)
-          print("Fast settings applied: ponder=true, fake_think_time=false, rate_limiting_delay=0, move_overhead=100 ms.")
-          print("Opening repertoire active: London System as White; French Defense against 1.e4 as Black.")
-          print("Stockfish settings: Threads=2, Hash=2048 MB.")
+          print("Configuration validated: Stockfish 19, London/French Polyglot book, fast Bullet settings.")
           PY
 
       - name: Run bot for this six-hour cycle
         working-directory: lichess-bot
         run: |
           echo "Starting lichess-bot with official Stockfish 19."
-          timeout --signal=INT --kill-after=30s 20700s python lichess-bot.py --config config.yml || status=$?
-          status=${status:-0}
-          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+          set +e
+          timeout --signal=INT --kill-after=30s 20700s python lichess-bot.py --config config.yml
+          status=$?
+          set -e
+
+          # A clean exit in a few seconds means the bot quit instead of staying online.
+          if [ "$status" -eq 0 ]; then
+            echo "ERROR: lichess-bot exited before the scheduled run window."
+            exit 1
+          elif [ "$status" -eq 124 ]; then
+            echo "Scheduled run window completed (5h45m)."
+          else
+            echo "ERROR: lichess-bot stopped unexpectedly with exit code $status."
             exit "$status"
           fi
-          echo "Scheduled run ended; timeout exit code $status is expected after the run window."
