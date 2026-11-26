@@ -192,7 +192,7 @@ jobs:
           matchmaking["opponent_max_rating"] = 4000
           matchmaking.pop("opponent_rating_difference", None)
           matchmaking["rating_preference"] = "none"
-          matchmaking["challenge_mode"] = "casual"
+          matchmaking["challenge_mode"] = "rated"
           matchmaking["challenge_filter"] = "fine"
 
           # Validate the exact structure that lichess-bot expects before launch.
@@ -211,7 +211,7 @@ jobs:
               raise SystemExit("Matchmaking must allow the full Lichess bot rating range")
           if "opponent_rating_difference" in matchmaking:
               raise SystemExit("Matchmaking must not restrict opponents by rating difference")
-          print("Configuration validated: Stockfish 19, London/French book, and automatic casual 3+1 matchmaking against bots from 600 to 4000.")
+          print("Configuration validated: Stockfish 19, London/French book, and automatic rated 3+1 matchmaking against bots from 600 to 4000.")
 
           PY
 
