@@ -186,8 +186,24 @@ jobs:
           matchmaking["allow_during_games"] = False
           matchmaking["challenge_variant"] = "standard"
           matchmaking["challenge_timeout"] = 30
-          matchmaking["challenge_initial_time"] = [180]
-          matchmaking["challenge_increment"] = [1]
+          # The upstream client randomly chooses the default or one override
+          # for each new challenge, so all four time-control formats are mixed.
+          matchmaking["challenge_initial_time"] = [60]
+          matchmaking["challenge_increment"] = [0]
+          matchmaking["overrides"] = {
+              "blitz": {
+                  "challenge_initial_time": [180],
+                  "challenge_increment": [2],
+              },
+              "rapid": {
+                  "challenge_initial_time": [600],
+                  "challenge_increment": [5],
+              },
+              "classical": {
+                  "challenge_initial_time": [1800],
+                  "challenge_increment": [0],
+              },
+          }
           matchmaking["opponent_min_rating"] = 600
           matchmaking["opponent_max_rating"] = 4000
           matchmaking.pop("opponent_rating_difference", None)
@@ -207,11 +223,20 @@ jobs:
           )
           if matchmaking["allow_matchmaking"] is not True or matchmaking["challenge_variant"] != "standard":
               raise SystemExit("Automatic standard-chess bot matchmaking is not enabled")
+          expected_controls = {
+              "blitz": {"challenge_initial_time": [180], "challenge_increment": [2]},
+              "rapid": {"challenge_initial_time": [600], "challenge_increment": [5]},
+              "classical": {"challenge_initial_time": [1800], "challenge_increment": [0]},
+          }
+          if matchmaking["challenge_initial_time"] != [60] or matchmaking["challenge_increment"] != [0]:
+              raise SystemExit("Bullet default time control is invalid")
+          if matchmaking.get("overrides") != expected_controls:
+              raise SystemExit("Bullet/blitz/rapid/classical matchmaking overrides are invalid")
           if matchmaking["opponent_min_rating"] != 600 or matchmaking["opponent_max_rating"] != 4000:
               raise SystemExit("Matchmaking must allow the full Lichess bot rating range")
           if "opponent_rating_difference" in matchmaking:
               raise SystemExit("Matchmaking must not restrict opponents by rating difference")
-          print("Configuration validated: Stockfish 19, London/French book, and automatic rated 3+1 matchmaking against bots from 600 to 4000.")
+          print("Configuration validated: Stockfish 19, London/French book, and automatic rated bullet 1+0, blitz 3+2, rapid 10+5, and classical 30+0 matchmaking against bots from 600 to 4000.")
 
           PY
 
