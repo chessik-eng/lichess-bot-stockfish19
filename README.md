@@ -18,7 +18,7 @@ This repository runs the official `lichess-bot` client with the official Stockfi
 - The workflow downloads the current `lichess-bot` client and the pinned Stockfish 19 release when it starts.
 - Engine settings: 2 threads and 2048 MB hash. Actual strength depends on the runner CPU, time control, and Lichess opponents; no fixed Lichess rating is guaranteed.
 - Automatic matchmaking is enabled: when idle, the bot challenges random Lichess bots in standard chess, with no rating-difference restriction (opponent range 600–4000).
-- Challenges are casual 3+1 games, at most one game at a time. The bot waits 30 minutes between matchmaking attempts and does not immediately retry bots that decline.
+- Challenges are rated 3+1 games, at most one game at a time. The bot waits 30 minutes between matchmaking attempts and does not immediately retry bots that decline.
 - Lichess limits bot-vs-bot play to 100 games per day. Matchmaking does not enumerate every account; it selects opponents through Lichess matchmaking. The six-hour GitHub Actions schedule also means the bot is not online continuously.
 
 ## Upstream projects
