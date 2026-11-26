@@ -78,7 +78,7 @@ jobs:
                           records.append((key, encode_polyglot_move(move), 100, 0))
                       board.push(move)
 
-          if games != 2 or len(records) < 20:
+          if games != 5 or len(records) < 50:
               raise SystemExit(f"Opening book build failed: games={games}, entries={len(records)}")
 
           # Polyglot books are sorted by their 64-bit Zobrist key and consist
@@ -94,14 +94,27 @@ jobs:
           start = chess.Board()
           after_e4 = chess.Board()
           after_e4.push_san("e4")
+          london_replies = ("d5", "e6", "Nf6", "g6")
           with chess.polyglot.open_reader(target) as reader:
               start_moves = {start.san(entry.move) for entry in reader.find_all(start)}
               french_moves = {after_e4.san(entry.move) for entry in reader.find_all(after_e4)}
+              london_checks = {}
+              for reply in london_replies:
+                  position = chess.Board()
+                  position.push_san("d4")
+                  position.push_san(reply)
+                  london_checks[reply] = {
+                      position.san(entry.move) for entry in reader.find_all(position)
+                  }
           if start_moves != {"d4"} or french_moves != {"e6"}:
               raise SystemExit(f"Unexpected repertoire: first_moves={start_moves}, replies_to_e4={french_moves}")
+          bad_london = {reply: moves for reply, moves in london_checks.items() if moves != {"Bf4"}}
+          if bad_london:
+              raise SystemExit(f"London System is not enforced after these replies: {bad_london}")
 
           print(f"Built {target}: {len(records)} valid Polyglot entries ({target.stat().st_size} bytes).")
-          print("Verified: White starts 1.d4 (London System); against 1.e4 Black replies 1...e6 (French Defense).")
+          print("Verified: White starts 1.d4 and plays 2.Bf4 against ...d5, ...e6, ...Nf6 and ...g6.")
+          print("Verified: against 1.e4 Black replies 1...e6 (French Defense).")
           PY
 
       - name: Download Stockfish 19
