@@ -222,8 +222,8 @@ jobs:
                   "challenge_increment": [0],
               },
           }
-          matchmaking["opponent_min_rating"] = 600
-          matchmaking["opponent_max_rating"] = 4000
+          matchmaking["opponent_min_rating"] = 0
+          matchmaking["opponent_max_rating"] = 500
           matchmaking.pop("opponent_rating_difference", None)
           matchmaking["rating_preference"] = "none"
           matchmaking["challenge_mode"] = "rated"
@@ -252,11 +252,11 @@ jobs:
               raise SystemExit("Bullet default time control is invalid")
           if matchmaking.get("overrides") != expected_controls:
               raise SystemExit("Bullet/blitz/rapid/classical matchmaking overrides are invalid")
-          if matchmaking["opponent_min_rating"] != 600 or matchmaking["opponent_max_rating"] != 4000:
+          if matchmaking["opponent_min_rating"] != 0 or matchmaking["opponent_max_rating"] != 500:
               raise SystemExit("Matchmaking must allow the full Lichess bot rating range")
           if "opponent_rating_difference" in matchmaking:
               raise SystemExit("Matchmaking must not restrict opponents by rating difference")
-          print("Configuration validated: Stockfish 19, London/French book, and automatic rated bullet 1+0, blitz 3+2, rapid 10+5, and classical 30+0 matchmaking against bots from 600 to 4000.")
+          print("Configuration validated: Stockfish 19, London/French book, and automatic rated bullet 1+0, blitz 3+2, rapid 10+5, and classical 30+0 matchmaking against bots from 0 to 500.")
 
           PY
 
