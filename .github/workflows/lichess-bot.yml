@@ -30,6 +30,24 @@ jobs:
           git clone --depth 1 https://github.com/lichess-bot-devs/lichess-bot.git lichess-bot
           cp lichess-bot/config.yml.default lichess-bot/config.yml
 
+      - name: Set unanswered outgoing challenge timeout to 60 seconds
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("lichess-bot/lib/matchmaking.py")
+          source = path.read_text(encoding="utf-8")
+          old = "self.last_challenge_created_delay = Timer(seconds(25))  # Challenges expire after 20 seconds."
+          new = "self.last_challenge_created_delay = Timer(seconds(60))  # Cancel an unanswered outgoing challenge after 60 seconds."
+          if source.count(old) != 1:
+              raise SystemExit("Unexpected upstream matchmaking.py version; refusing to apply timeout patch.")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          check = path.read_text(encoding="utf-8")
+          if new not in check or old in check:
+              raise SystemExit("Failed to verify 60-second outgoing challenge timeout.")
+          print("Verified: unanswered outgoing challenges expire and are cancelled after 60 seconds.")
+          PY
+
       - name: Install lichess-bot dependencies
         working-directory: lichess-bot
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
@@ -185,7 +203,7 @@ jobs:
           matchmaking["allow_matchmaking"] = True
           matchmaking["allow_during_games"] = False
           matchmaking["challenge_variant"] = "standard"
-          matchmaking["challenge_timeout"] = 30
+          matchmaking["challenge_timeout"] = 5
           # The upstream client randomly chooses the default or one override
           # for each new challenge, so all four time-control formats are mixed.
           matchmaking["challenge_initial_time"] = [60]
@@ -223,6 +241,8 @@ jobs:
           )
           if matchmaking["allow_matchmaking"] is not True or matchmaking["challenge_variant"] != "standard":
               raise SystemExit("Automatic standard-chess bot matchmaking is not enabled")
+          if matchmaking["challenge_timeout"] != 5:
+              raise SystemExit("Post-game matchmaking cooldown must be five minutes")
           expected_controls = {
               "blitz": {"challenge_initial_time": [180], "challenge_increment": [2]},
               "rapid": {"challenge_initial_time": [600], "challenge_increment": [5]},
